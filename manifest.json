@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Tab Organizer",
+  "version": "1.0.0",
+  "description": "Organize tabs by closing duplicates and grouping by hostname",
+  "permissions": [
+    "tabs"
+  ],
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Organize Tabs"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

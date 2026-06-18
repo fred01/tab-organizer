@@ -21,29 +21,63 @@ async function organizeTabs() {
   await groupTabsByHostname(remainingTabs);
 }
 
-async function closeDuplicateTabs(tabs) {
-  // Create a map to track URLs and their tabs
-  const urlMap = new Map();
-  
-  // Group tabs by URL
-  for (const tab of tabs) {
-    if (!urlMap.has(tab.url)) {
-      urlMap.set(tab.url, []);
-    }
-    urlMap.get(tab.url).push(tab);
+// Normalize a URL so that different views of the same resource collapse to one
+// canonical form. GitHub PR subpages (/pull/62/files, /commits, ...) and
+// YouTrack issue slugs (/issue/ORCA-455/Some-Title) all map to the bare URL.
+function canonicalizeUrl(rawUrl) {
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch (error) {
+    return rawUrl;
   }
-  
-  // For each URL with duplicates, close all but the first one
+
+  // github.com/<owner>/<repo>/pull/<n>[/changes|/files|/commits|...] -> .../pull/<n>
+  if (url.hostname === 'github.com') {
+    const match = url.pathname.match(/^(\/[^/]+\/[^/]+\/pull\/\d+)(?:\/.*)?$/);
+    if (match) {
+      return url.origin + match[1];
+    }
+  }
+
+  // youtrack.jetbrains.com/issue/<ID>[/slug...] -> .../issue/<ID>
+  if (url.hostname === 'youtrack.jetbrains.com') {
+    const match = url.pathname.match(/^(\/issue\/[A-Za-z][A-Za-z0-9]*-\d+)(?:\/.*)?$/);
+    if (match) {
+      return url.origin + match[1];
+    }
+  }
+
+  return rawUrl;
+}
+
+async function closeDuplicateTabs(tabs) {
+  // Group tabs by their canonical URL
+  const urlMap = new Map();
+  for (const tab of tabs) {
+    const key = canonicalizeUrl(tab.url);
+    if (!urlMap.has(key)) {
+      urlMap.set(key, []);
+    }
+    urlMap.get(key).push(tab);
+  }
+
+  // For each canonical URL with duplicates, keep one winner and close the rest.
+  // The winner is the tab already sitting on the canonical URL (e.g. .../pull/62),
+  // otherwise the leftmost tab.
   const tabsToClose = [];
-  for (const [url, tabsWithUrl] of urlMap.entries()) {
+  for (const [canonicalUrl, tabsWithUrl] of urlMap.entries()) {
     if (tabsWithUrl.length > 1) {
-      // Keep the first tab, close the rest
-      for (let i = 1; i < tabsWithUrl.length; i++) {
-        tabsToClose.push(tabsWithUrl[i].id);
+      tabsWithUrl.sort((a, b) => a.index - b.index);
+      const winner = tabsWithUrl.find(t => t.url === canonicalUrl) || tabsWithUrl[0];
+      for (const tab of tabsWithUrl) {
+        if (tab.id !== winner.id) {
+          tabsToClose.push(tab.id);
+        }
       }
     }
   }
-  
+
   // Close duplicate tabs
   if (tabsToClose.length > 0) {
     await chrome.tabs.remove(tabsToClose);

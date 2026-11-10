@@ -255,18 +255,33 @@ async function groupTabsByHostname(tabs) {
     return hostnameRank(a) - hostnameRank(b) || hostnamePositions.get(a) - hostnamePositions.get(b);
   });
   
-  // Move tabs to group them by hostname
-  let targetIndex = 0;
+  const orderedIds = [];
   for (const hostname of sortedHostnames) {
     const tabsInHostname = hostnameMap.get(hostname);
-    
+
     // Sort tabs within the same hostname by their original index
     tabsInHostname.sort((a, b) => a.index - b.index);
-    
-    // Move each tab to its new position
-    for (const tab of tabsInHostname) {
-      await chrome.tabs.move(tab.id, { index: targetIndex });
-      targetIndex++;
+    orderedIds.push(...tabsInHostname.map(t => t.id));
+  }
+
+  // One call instead of a move per tab: a move failing midway used to leave the
+  // rest of the tabs where they were, splitting a hostname's group.
+  if (orderedIds.length > 0) {
+    await moveTabsWithRetry(orderedIds, 0);
+  }
+}
+
+// Right after tabs are closed Chrome may still be animating the tab strip and
+// rejects edits with "Tabs cannot be edited right now"; it passes in a moment.
+async function moveTabsWithRetry(tabIds, index, attempts = 10) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await chrome.tabs.move(tabIds, { index });
+    } catch (error) {
+      if (attempt >= attempts || !/cannot be edited/i.test(error.message)) {
+        throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
   }
 }

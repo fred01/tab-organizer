@@ -226,6 +226,8 @@ function hostnameRank(hostname) {
 async function groupTabsByHostname(tabs) {
   // Create a map to group tabs by hostname
   const hostnameMap = new Map();
+  // Tabs whose URL doesn't parse go last; left unmoved they would end up first.
+  const unparsedTabs = [];
   
   // Group tabs by hostname
   for (const tab of tabs) {
@@ -238,8 +240,7 @@ async function groupTabsByHostname(tabs) {
       }
       hostnameMap.get(hostname).push(tab);
     } catch (error) {
-      // Skip invalid URLs (like chrome://, about:, etc.)
-      continue;
+      unparsedTabs.push(tab);
     }
   }
   
@@ -263,20 +264,26 @@ async function groupTabsByHostname(tabs) {
     tabsInHostname.sort((a, b) => a.index - b.index);
     orderedIds.push(...tabsInHostname.map(t => t.id));
   }
+  orderedIds.push(...unparsedTabs.sort((a, b) => a.index - b.index).map(t => t.id));
 
-  // One call instead of a move per tab: a move failing midway used to leave the
-  // rest of the tabs where they were, splitting a hostname's group.
-  if (orderedIds.length > 0) {
-    await moveTabsWithRetry(orderedIds, 0);
+  // Appending each tab to the end, in order, leaves exactly this order whatever
+  // the starting positions; a multi-tab move to index 0 came out in a different
+  // order. A tab that can't be moved is skipped so it doesn't stop the rest.
+  for (const tabId of orderedIds) {
+    try {
+      await moveTabWithRetry(tabId, -1);
+    } catch (error) {
+      console.warn(`Could not move tab ${tabId}:`, error);
+    }
   }
 }
 
 // Right after tabs are closed Chrome may still be animating the tab strip and
 // rejects edits with "Tabs cannot be edited right now"; it passes in a moment.
-async function moveTabsWithRetry(tabIds, index, attempts = 10) {
+async function moveTabWithRetry(tabId, index, attempts = 10) {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await chrome.tabs.move(tabIds, { index });
+      return await chrome.tabs.move(tabId, { index });
     } catch (error) {
       if (attempt >= attempts || !/cannot be edited/i.test(error.message)) {
         throw error;

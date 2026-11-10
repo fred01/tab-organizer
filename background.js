@@ -216,6 +216,13 @@ async function closeDuplicateTabs(tabs) {
   }
 }
 
+const LEADING_HOSTNAMES = ['youtrack.jetbrains.com', 'github.com'];
+
+function hostnameRank(hostname) {
+  const rank = LEADING_HOSTNAMES.indexOf(hostname);
+  return rank === -1 ? LEADING_HOSTNAMES.length : rank;
+}
+
 async function groupTabsByHostname(tabs) {
   // Create a map to group tabs by hostname
   const hostnameMap = new Map();
@@ -243,9 +250,9 @@ async function groupTabsByHostname(tabs) {
     hostnamePositions.set(hostname, minIndex);
   }
   
-  // Sort hostnames by their leftmost tab position
+  // YouTrack first, then GitHub, then the other hostnames by their leftmost tab position
   const sortedHostnames = Array.from(hostnameMap.keys()).sort((a, b) => {
-    return hostnamePositions.get(a) - hostnamePositions.get(b);
+    return hostnameRank(a) - hostnameRank(b) || hostnamePositions.get(a) - hostnamePositions.get(b);
   });
   
   // Move tabs to group them by hostname
